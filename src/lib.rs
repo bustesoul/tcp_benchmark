@@ -71,7 +71,7 @@ pub fn load_certs_and_key(
         // Reset reader and try PEM RSA (PKCS1)
         let mut key_reader = StdBufReader::new(File::open(Path::new(key_path))
             .map_err(|e| format!("Failed to open key file {} again: {}", key_path, e))?);
-        if let Some(key_res) = rustls_pemfile::rsa_private_keys(&mut key_reader).next() {
+        let x = if let Some(key_res) = rustls_pemfile::rsa_private_keys(&mut key_reader).next() {
             let key_der = key_res.map_err(|e| format!("Failed to parse PEM RSA key from {}: {}", key_path, e))?;
             println!("Loaded key as PEM RSA (PKCS1).");
             PrivateKeyDer::Pkcs1(key_der.into()) // Wrap in enum
@@ -82,7 +82,7 @@ pub fn load_certs_and_key(
                 .map_err(|e| format!("Failed to read DER key file {}: {}", key_path, e))?;
             // Note: This assumes the DER key is PKCS8. If it could be PKCS1 DER, more logic needed.
             PrivateKeyDer::Pkcs8(key_bytes.into()) // Wrap in enum
-        }
+        }; x
     };
 
 
