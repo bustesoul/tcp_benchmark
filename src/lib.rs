@@ -60,44 +60,33 @@ pub fn load_certs_and_key(
         certs
     };
 
-    // Load private key (try PEM PKCS8 first)
-    let key_file = File::open(Path::new(key_path))
-        .map_err(|e| format!("Failed to open key file {}: {}", key_path, e))?;
-    let mut key_reader = StdBufReader::new(key_file);
+    // --- Load Private Key ---
+    // Read the key file content once
+    let key_bytes = std::fs::read(key_path)
+        .map_err(|e| format!("Failed to read key file {}: {}", key_path, e))?;
 
-    let key = if let Some(key_res) = rustls_pemfile::pkcs8_private_keys(&mut key_reader).next() {
+    // Attempt 1: PKCS#8 PEM
+    let mut cursor1 = std::io::Cursor::new(&key_bytes);
+    if let Some(key_res) = rustls_pemfile::pkcs8_private_keys(&mut cursor1).next() {
         let key_der = key_res
             .map_err(|e| format!("Failed to parse PEM PKCS8 key from {}: {}", key_path, e))?;
         println!("Loaded key as PEM PKCS8.");
-        PrivateKeyDer::Pkcs8(key_der.into()) // Wrap in enum
-    } else {
-        // Reset reader and try PEM RSA (PKCS1)
-        // Fix lifetime issue by reading the file content first
-        let key_bytes_for_rsa = std::fs::read(key_path)
-            .map_err(|e| format!("Failed to read key file {} for RSA check: {}", key_path, e))?;
-        let mut key_reader_rsa = std::io::Cursor::new(key_bytes_for_rsa); // Use Cursor for in-memory reader
+        return Ok((certs, PrivateKeyDer::Pkcs8(key_der.into())));
+    }
 
-        let key_result =
-            if let Some(key_res) = rustls_pemfile::rsa_private_keys(&mut key_reader_rsa).next() {
-                let key_der = key_res
-                    .map_err(|e| format!("Failed to parse PEM RSA key from {}: {}", key_path, e))?;
-                println!("Loaded key as PEM RSA (PKCS1).");
-                PrivateKeyDer::Pkcs1(key_der.into()) // Wrap in enum
-            } else {
-                // If no PEM keys found, assume DER PKCS8 (most common DER format)
-                println!("No PEM keys found, loading key as DER PKCS8...");
-                let _key_bytes = std::fs::read(key_path)
-                    .map_err(|e| format!("Failed to read DER key file {}: {}", key_path, e))?;
-                // If no PEM keys found, assume DER PKCS8 (most common DER format)
-                println!("No PEM keys found, loading key as DER PKCS8...");
-                // Read the file again for DER loading if RSA PEM failed
-                let key_bytes_der = std::fs::read(key_path)
-                    .map_err(|e| format!("Failed to read DER key file {}: {}", key_path, e))?;
-                // Note: This assumes the DER key is PKCS8. If it could be PKCS1 DER, more logic needed.
-                PrivateKeyDer::Pkcs8(key_bytes_der.into()) // Wrap in enum
-            };
-        key_result // Assign the result of the if/else block
-    };
+    // Attempt 2: RSA PEM (PKCS#1)
+    let mut cursor2 = std::io::Cursor::new(&key_bytes);
+    if let Some(key_res) = rustls_pemfile::rsa_private_keys(&mut cursor2).next() {
+        let key_der = key_res
+            .map_err(|e| format!("Failed to parse PEM RSA key from {}: {}", key_path, e))?;
+        println!("Loaded key as PEM RSA (PKCS1).");
+        return Ok((certs, PrivateKeyDer::Pkcs1(key_der.into())));
+    }
+
+    // Attempt 3: DER PKCS#8 (fallback)
+    println!("No PEM keys found, loading key as DER PKCS8...");
+    // Note: This assumes the DER key is PKCS8. If it could be PKCS1 DER, more logic needed.
+    let key = PrivateKeyDer::Pkcs8(key_bytes.into()); // Now moves the owned Vec<u8>
 
     Ok((certs, key))
 }
