@@ -200,16 +200,32 @@ pub fn create_client_config(ca_cert_path: Option<&str>) -> Result<Arc<ClientConf
                 .map_err(|e| format!("Failed to open CA cert file {}: {}", path, e))?;
             let mut reader = StdBufReader::new(ca_file);
 
-            // Add CA certs from the PEM file
-            let certs_added = rustls_pemfile::certs(&mut reader)
-                 .collect::<Result<Vec<_>, _>>()
-                 .map_err(|e| format!("Failed to parse CA cert file {}: {}", path, e))?;
+            // Try parsing as PEM first
+            let pem_certs = rustls_pemfile::certs(&mut reader)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Failed to parse PEM CA cert file {}: {}", path, e))?;
 
-            if certs_added.is_empty() {
-                 return Err(format!("No valid PEM certificates found in CA file: {}", path).into());
+            let certs_to_add = if !pem_certs.is_empty() {
+                println!("Loaded CA certs as PEM.");
+                pem_certs
+            } else {
+                // If no PEM certs found, try reading the whole file as DER
+                println!("No PEM CA certs found, attempting to load as DER...");
+                let der_bytes = std::fs::read(path)
+                    .map_err(|e| format!("Failed to read DER CA cert file {}: {}", path, e))?;
+                // rustls expects a Vec<CertificateDer>, so wrap the single DER cert in a vec
+                vec![CertificateDer::from(der_bytes)]
+            };
+
+
+            if certs_to_add.is_empty() {
+                 // This should ideally not happen if reading DER was attempted and failed above,
+                 // but kept as a safeguard. The error from fs::read or CertificateDer::from would trigger first.
+                 return Err(format!("No valid PEM or DER certificates found in CA file: {}", path).into());
             }
 
-            root_store.add_parsable_certificates(certs_added);
+            // Add the successfully parsed certificates (either PEM or DER)
+            root_store.add_parsable_certificates(certs_to_add);
 
 
             // Build config with root store for verification
