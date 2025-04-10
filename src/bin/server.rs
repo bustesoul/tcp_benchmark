@@ -1,7 +1,6 @@
 use clap::Parser;
 use std::error::Error;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tcp_benchmark_lib::{create_server_config, MyRequest, MyResponse}; // Import from lib
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -16,11 +15,19 @@ struct Args {
     addr: String,
 
     /// Path to the certificate file (DER or PEM)
-    #[arg(short, long, default_value = "/Users/buste/RustroverProjects/quic_demo/certs/cert.der")]
+    #[arg(
+        short,
+        long,
+        default_value = "/Users/buste/RustroverProjects/quic_demo/certs/cert.der"
+    )]
     cert: String,
 
     /// Path to the private key file (DER or PEM)
-    #[arg(short, long, default_value = "/Users/buste/RustroverProjects/quic_demo/certs/key.der")]
+    #[arg(
+        short,
+        long,
+        default_value = "/Users/buste/RustroverProjects/quic_demo/certs/key.der"
+    )]
     key: String,
 }
 
@@ -47,13 +54,18 @@ async fn handle_tls_connection(
                     Ok(req) => req,
                     Err(e) => {
                         eprintln!("TLS: Failed to parse request from {}: {}", addr, e);
-                        let error_response = MyResponse { result: format!("Error: Invalid request format - {}", e) };
-                        let response_str = serde_json::to_string(&error_response).unwrap_or_default() + "\n";
+                        let error_response = MyResponse {
+                            result: format!("Error: Invalid request format - {}", e),
+                        };
+                        let response_str =
+                            serde_json::to_string(&error_response).unwrap_or_default() + "\n";
                         let _ = mut_writer.write_all(response_str.as_bytes()).await;
                         break; // Close connection on bad request
                     }
                 };
-                let response = MyResponse { result: format!("TLS Server got action: {}", request.action) };
+                let response = MyResponse {
+                    result: format!("TLS Server got action: {}", request.action),
+                };
                 match serde_json::to_string(&response) {
                     Ok(response_str) => {
                         let response_bytes = (response_str + "\n").into_bytes();
@@ -65,16 +77,22 @@ async fn handle_tls_connection(
                     Err(e) => {
                         eprintln!("TLS: Failed to serialize response: {}", e);
                         // Send generic error if serialization fails
-                        let response_bytes = (r#"{"result":"Error: Failed to serialize response"}\n"#).as_bytes();
+                        let response_bytes =
+                            (r#"{"result":"Error: Failed to serialize response"}\n"#).as_bytes();
                         if let Err(e_write) = mut_writer.write_all(response_bytes).await {
-                            eprintln!("TLS: Failed to write error response to {}: {}", addr, e_write);
+                            eprintln!(
+                                "TLS: Failed to write error response to {}: {}",
+                                addr, e_write
+                            );
                         }
                         break; // Close connection on serialization error
                     }
                 }
             }
             Err(e) => {
-                if e.kind() != std::io::ErrorKind::ConnectionAborted && e.kind() != std::io::ErrorKind::ConnectionReset {
+                if e.kind() != std::io::ErrorKind::ConnectionAborted
+                    && e.kind() != std::io::ErrorKind::ConnectionReset
+                {
                     eprintln!("TLS: Error reading from {}: {}", addr, e);
                 }
                 break;
@@ -84,7 +102,11 @@ async fn handle_tls_connection(
     println!("TLS: Finished handling connection from {}", addr);
 }
 
-async fn run_tls_server(addr: &str, cert_path: &str, key_path: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn run_tls_server(
+    addr: &str,
+    cert_path: &str,
+    key_path: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let server_config = create_server_config(cert_path, key_path)?;
     let acceptor = TlsAcceptor::from(server_config);
     let listener = TcpListener::bind(addr).await?;
@@ -94,8 +116,12 @@ async fn run_tls_server(addr: &str, cert_path: &str, key_path: &str) -> Result<(
         let acceptor = acceptor.clone();
         tokio::spawn(async move {
             match acceptor.accept(socket).await {
-                Ok(tls_stream) => { handle_tls_connection(tls_stream, peer_addr).await; }
-                Err(e) => { eprintln!("TLS handshake error from {}: {}", peer_addr, e); }
+                Ok(tls_stream) => {
+                    handle_tls_connection(tls_stream, peer_addr).await;
+                }
+                Err(e) => {
+                    eprintln!("TLS handshake error from {}: {}", peer_addr, e);
+                }
             }
         });
     }
