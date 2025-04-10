@@ -29,8 +29,10 @@ struct Args {
     #[arg(long, default_value = "localhost")]
     server_name: String,
 
-    // Note: Cert/Key paths are not needed for the default insecure client config,
-    // but could be added here if client authentication or CA verification were implemented.
+    /// Optional path to the CA certificate file (PEM format) for server verification.
+    /// If not provided, server certificate will not be verified (INSECURE).
+    #[arg(long)]
+    ca_cert: Option<String>,
 }
 
 // --- TCP+TLS Client Benchmark Implementation ---
@@ -100,12 +102,14 @@ async fn run_single_tls_task(
 async fn run_concurrent_benchmark_tls(
     server_addr_str: &str,
     tls_server_name_str: &str,
+    ca_cert_path: Option<&str>, // Add CA cert path parameter
     request: MyRequest,
     concurrent_tasks: usize,
     requests_per_task: u32,
 ) -> Result<BenchmarkStats, Box<dyn Error + Send + Sync>> {
     let server_addr: SocketAddr = server_addr_str.parse()?;
-    let client_config = create_client_config()?; // Uses insecure config from lib
+    // Pass the CA cert path to create_client_config
+    let client_config = create_client_config(ca_cert_path)?;
     let tls_connector = Arc::new(TlsConnector::from(client_config));
     let server_name = rustls::pki_types::ServerName::try_from(tls_server_name_str)
         .map_err(|e| format!("Invalid TLS server name '{}': {}", tls_server_name_str, e))?
@@ -196,6 +200,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let stats = run_concurrent_benchmark_tls(
         &args.addr,
         &args.server_name,
+        args.ca_cert.as_deref(), // Pass the optional CA cert path
         request,
         args.concurrency,
         args.requests,

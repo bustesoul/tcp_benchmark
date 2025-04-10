@@ -69,20 +69,29 @@ pub fn load_certs_and_key(
         PrivateKeyDer::Pkcs8(key_der.into()) // Wrap in enum
     } else {
         // Reset reader and try PEM RSA (PKCS1)
-        let mut key_reader = StdBufReader::new(File::open(Path::new(key_path))
-            .map_err(|e| format!("Failed to open key file {} again: {}", key_path, e))?);
-        let x = if let Some(key_res) = rustls_pemfile::rsa_private_keys(&mut key_reader).next() {
-            let key_der = key_res.map_err(|e| format!("Failed to parse PEM RSA key from {}: {}", key_path, e))?;
-            println!("Loaded key as PEM RSA (PKCS1).");
-            PrivateKeyDer::Pkcs1(key_der.into()) // Wrap in enum
+        // Fix lifetime issue by reading the file content first
+        let key_bytes_for_rsa = std::fs::read(key_path)
+             .map_err(|e| format!("Failed to read key file {} for RSA check: {}", key_path, e))?;
+        let mut key_reader_rsa = std::io::Cursor::new(key_bytes_for_rsa); // Use Cursor for in-memory reader
+
+        let key_result = if let Some(key_res) = rustls_pemfile::rsa_private_keys(&mut key_reader_rsa).next() {
+             let key_der = key_res.map_err(|e| format!("Failed to parse PEM RSA key from {}: {}", key_path, e))?;
+             println!("Loaded key as PEM RSA (PKCS1).");
+             PrivateKeyDer::Pkcs1(key_der.into()) // Wrap in enum
         } else {
             // If no PEM keys found, assume DER PKCS8 (most common DER format)
             println!("No PEM keys found, loading key as DER PKCS8...");
             let key_bytes = std::fs::read(key_path)
                 .map_err(|e| format!("Failed to read DER key file {}: {}", key_path, e))?;
+            // If no PEM keys found, assume DER PKCS8 (most common DER format)
+            println!("No PEM keys found, loading key as DER PKCS8...");
+            // Read the file again for DER loading if RSA PEM failed
+            let key_bytes_der = std::fs::read(key_path)
+                .map_err(|e| format!("Failed to read DER key file {}: {}", key_path, e))?;
             // Note: This assumes the DER key is PKCS8. If it could be PKCS1 DER, more logic needed.
-            PrivateKeyDer::Pkcs8(key_bytes.into()) // Wrap in enum
-        }; x
+            PrivateKeyDer::Pkcs8(key_bytes_der.into()) // Wrap in enum
+        };
+        key_result // Assign the result of the if/else block
     };
 
 
@@ -175,14 +184,51 @@ pub mod danger {
 }
 // --- !!! END OF INSECURE CLIENT CONFIGURATION !!! ---
 
-// Create a TLS ClientConfig (INSECURE: trusts any server cert)
-pub fn create_client_config() -> Result<Arc<ClientConfig>, Box<dyn Error + Send + Sync>> {
-    // Get the currently installed default crypto provider
-    let provider = rustls::crypto::CryptoProvider::get_default()
-        .ok_or("No default crypto provider found or configured")?;
-    let config = ClientConfig::builder()
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(danger::NoServerVerification::new(provider.clone())))
-        .with_no_client_auth();
+use rustls::RootCertStore; // Import RootCertStore
+
+// Create a TLS ClientConfig
+// If ca_cert_path is Some, it verifies the server using the provided CA cert.
+// If ca_cert_path is None, it uses an INSECURE configuration that trusts any server cert.
+pub fn create_client_config(ca_cert_path: Option<&str>) -> Result<Arc<ClientConfig>, Box<dyn Error + Send + Sync>> {
+    let config_builder = ClientConfig::builder();
+
+    let config = match ca_cert_path {
+        Some(path) => {
+            println!("Loading CA certificate from: {}", path);
+            let mut root_store = RootCertStore::empty();
+            let ca_file = File::open(Path::new(path))
+                .map_err(|e| format!("Failed to open CA cert file {}: {}", path, e))?;
+            let mut reader = StdBufReader::new(ca_file);
+
+            // Add CA certs from the PEM file
+            let certs_added = rustls_pemfile::certs(&mut reader)
+                 .collect::<Result<Vec<_>, _>>()
+                 .map_err(|e| format!("Failed to parse CA cert file {}: {}", path, e))?;
+
+            if certs_added.is_empty() {
+                 return Err(format!("No valid PEM certificates found in CA file: {}", path).into());
+            }
+
+            root_store.add_parsable_certificates(certs_added);
+
+
+            // Build config with root store for verification
+            config_builder
+                .with_root_certificates(root_store)
+                .with_no_client_auth()
+        }
+        None => {
+            eprintln!("WARN: No CA certificate provided. Using INSECURE client configuration that trusts any server certificate.");
+            // Get the currently installed default crypto provider for the insecure verifier
+            let provider = rustls::crypto::CryptoProvider::get_default()
+                .ok_or("No default crypto provider found or configured for insecure mode")?;
+            // Build insecure config
+            config_builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(danger::NoServerVerification::new(provider.clone())))
+                .with_no_client_auth()
+        }
+    };
+
     Ok(Arc::new(config))
 }
