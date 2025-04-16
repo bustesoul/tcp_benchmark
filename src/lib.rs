@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs::File;
-use std::io::BufReader as StdBufReader; // Avoid conflict with tokio::io::BufReader
+use std::io::BufReader as StdBufReader;
+// Avoid conflict with tokio::io::BufReader
 use std::path::Path;
 use std::sync::Arc;
 
@@ -15,10 +16,12 @@ use rustls::{ClientConfig, ServerConfig};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MyRequest {
     pub action: String,
+    pub payload: String,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MyResponse {
     pub result: String,
+    pub payload: String,
 }
 #[derive(Serialize, Debug)]
 pub struct BenchmarkStats {
@@ -180,7 +183,8 @@ pub mod danger {
 }
 // --- !!! END OF INSECURE CLIENT CONFIGURATION !!! ---
 
-use rustls::RootCertStore; // Import RootCertStore
+use rustls::RootCertStore;
+// Import RootCertStore
 
 // Create a TLS ClientConfig
 // If ca_cert_path is Some, it verifies the server using the provided CA cert.

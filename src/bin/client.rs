@@ -58,6 +58,7 @@ async fn run_single_tls_task(
     for i in 0..num_requests {
         let request = MyRequest {
             action: format!("{}-{}", request_template.action, i),
+            payload: "pingpingpingpingpingpingpingpingpingpingpingpingpingpingping".to_string(),
         };
         let start_time = Instant::now();
         let request_str = match serde_json::to_string(&request) {
@@ -230,6 +231,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let request = MyRequest {
         action: "ping_tls".to_string(),
+        payload: "pingpingpingpingpingpingpingpingpingpingpingpingpingpingping".to_string(),
     };
     println!("Running TCP+TLS Client Benchmark...");
     let start_benchmark = Instant::now();

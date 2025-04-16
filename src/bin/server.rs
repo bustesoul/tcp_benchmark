@@ -56,6 +56,7 @@ async fn handle_tls_connection(
                         eprintln!("TLS: Failed to parse request from {}: {}", addr, e);
                         let error_response = MyResponse {
                             result: format!("Error: Invalid request format - {}", e),
+                            payload: "".to_string(),
                         };
                         let response_str =
                             serde_json::to_string(&error_response).unwrap_or_default() + "\n";
@@ -65,10 +66,12 @@ async fn handle_tls_connection(
                 };
                 let response = MyResponse {
                     result: format!("TLS Server got action: {}", request.action),
+                    payload: "pongpongpongpongpongpongpongpongpongpong".to_string(),
                 };
                 match serde_json::to_string(&response) {
                     Ok(response_str) => {
                         let response_bytes = (response_str + "\n").into_bytes();
+                        // println!("TLS: Request payload size: {}", request.payload.len());
                         if let Err(e) = mut_writer.write_all(&response_bytes).await {
                             eprintln!("TLS: Failed to write response to {}: {}", addr, e);
                             break;
