@@ -31,3 +31,9 @@ tokio-rustls = "0.26" # Check for latest version
 rustls = "0.23"       # Check for latest version compatible with tokio-rustls
 rustls-pki-types = "1"
 rustls-pemfile = "2.2.0" # Check for latest version
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
